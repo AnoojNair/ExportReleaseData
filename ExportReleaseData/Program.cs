@@ -26,10 +26,12 @@ namespace ExportReleaseData
             var folderLocation = Console.ReadLine();
             Console.WriteLine("Enter git url(foramt:https://github.com/vuejs/vue):");
             var gitUrl = Console.ReadLine();
+            Console.WriteLine("Enter Test files location(foramt:/test/):");
+            var testPattern = Console.ReadLine();
             var owner = gitUrl.Trim().Split('/')[gitUrl.Trim().Split('/').Length - 2];
             var name = gitUrl.Trim().Split('/').LastOrDefault();
             //var folderLocation = @"D:\ML\Pet Project\Data";
-            var allVuePrs = ExtractPR(client, owner, name, gitUrl + "/pull/", "/test/");
+            var allVuePrs = ExtractPR(client, owner, name, gitUrl + "/pull/", testPattern);
             File.WriteAllText(folderLocation + "\\" + name + "PR.csv", allVuePrs[1].ToString());
             File.WriteAllText(folderLocation + "\\" + name + "Releases.csv", allVuePrs[0].ToString());
             File.WriteAllText(folderLocation + "\\" + name + "Issues.csv", allVuePrs[2].ToString());
