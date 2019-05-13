@@ -15,6 +15,7 @@ namespace ExportReleaseData
     {
         static void Main(string[] args)
         {
+            // A Tool to export git commits
             var client = new GitHubClient(new ProductHeaderValue("Extract-PR"));
             Console.WriteLine("Enter Github Username:");
             var userName = Console.ReadLine();
