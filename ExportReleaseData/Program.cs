@@ -16,7 +16,6 @@ namespace ExportReleaseData
 
         static void Main(string[] args)
         {
-
             var client = new GitHubClient(new ProductHeaderValue("Extract-PR"));
 
 
