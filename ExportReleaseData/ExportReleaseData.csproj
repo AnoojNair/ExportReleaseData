@@ -45,6 +45,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AuthenticationHelper.cs" />
+    <Compile Include="GitHelper.cs" />
+    <Compile Include="InputHelper.cs" />
     <Compile Include="Issue.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

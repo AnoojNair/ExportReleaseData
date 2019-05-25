@@ -13,32 +13,64 @@ namespace ExportReleaseData
 {
     class Program
     {
+
         static void Main(string[] args)
         {
-            var client = new GitHubClient(new ProductHeaderValue("Extract-PR"));
-            Console.WriteLine("Enter Github Username:");
-            var userName = Console.ReadLine();
-            Console.WriteLine("Enter Github password:");
-            var pwd = GetPassword();
-            var basicAuth = new Credentials(userName, pwd);
-            client.Credentials = basicAuth;
-            Console.WriteLine("Enter Folder location to export:");
-            var folderLocation = Console.ReadLine();
-            Console.WriteLine("Enter git url(foramt:https://github.com/vuejs/vue):");
-            var gitUrl = Console.ReadLine();
-            Console.WriteLine("Enter Test files location(foramt:/test/):");
-            var testPattern = Console.ReadLine();
-            var owner = gitUrl.Trim().Split('/')[gitUrl.Trim().Split('/').Length - 2];
-            var name = gitUrl.Trim().Split('/').LastOrDefault();
-            //var folderLocation = @"D:\ML\Pet Project\Data";
-            var allVuePrs = ExtractPR(client, owner, name, gitUrl + "/pull/", testPattern);
-            File.WriteAllText(folderLocation + "\\" + name + "PR.csv", allVuePrs[1].ToString());
-            File.WriteAllText(folderLocation + "\\" + name + "Releases.csv", allVuePrs[0].ToString());
-            File.WriteAllText(folderLocation + "\\" + name + "Issues.csv", allVuePrs[2].ToString());
 
+            var client = new GitHubClient(new ProductHeaderValue("Extract-PR"));
+
+
+            var inputHelper = new InputHelper();
+            string userName = inputHelper.GetGitHubUserName();
+            string pwd = inputHelper.GetGitHubPassword();
+            string folderLocation = inputHelper.GetLocationToExportData();
+            string gitUrl = inputHelper.GetGitUrlToExport();
+            string testPattern = inputHelper.GetTestFilesLocation();
+
+            var authHelper = new AuthenticationHelper();
+            Credentials basicAuth = authHelper.GenerateCredentialsToAuthenticate(userName, pwd);
+            client.Credentials = basicAuth;
+
+            var gitHelper = new GitHelper();
+            string owner = gitHelper.GetOwnerNameFromGitUrl(gitUrl);
+            string name = gitHelper.GetRepoNameFromGitUrl(gitUrl);
+
+            var bugs = ExtractAllBugs(client, owner, name);
+            ExportBugsData(bugs, folderLocation, name);
+
+            var releases = ExtractReleaseData(client, owner, name, gitUrl + "/pull/", testPattern, bugs);
+            ExportReleaseToCSV(releases, folderLocation, name);
+            
+           
         }
 
-        private static Release ExtractCommits(GitHubClient client, string owner, string name, string currentTag, string previousTag, Release rel, string testPattern, List<Contributor> users)
+        private static void ExportReleaseToCSV(List<Release> releases, string folderLocation, string name)
+        {
+            var releaseCsv = new StringBuilder();
+            releaseCsv.AppendLine("Id,ProjectName,Version,Release Order,Created,ProjectStars," +
+                "ProjectWatch,Forks,TotalContributers,NumberofPullRequests,NumberOfFilesModified,NumberOfAdditions,NumberOfDeletions,NumberOfPRsReviewed,NumberOfUniqueContributers,NumberofReviewers,NumberofReviews,TestFilesChanged,PriorContributions,TotalFollowers,CommentsCount,IntegrationBugsCount,ContrubtionsFromMembers,Dependencies,TestCoverageScore,BugsCount");
+            foreach (var release in releases)
+            {
+                releaseCsv.AppendLine(release.ToString());
+            }
+            File.WriteAllText(folderLocation + "\\" + name + "Releases.csv", releaseCsv.ToString());
+        }
+
+        private static void ExportBugsData(List<Issue> bugs, string folderLocation, string name)
+        {
+            var issueCsv = new StringBuilder();
+            Console.WriteLine("Extract All Issues...");
+            issueCsv.AppendLine("IssueId,Title,CreatedDate");
+            foreach (var bug in bugs)
+            {
+                issueCsv.AppendLine(new Issue { Id = bug.Id, Title = bug.Title, Created = bug.Created }.ToString());
+            }
+
+            File.WriteAllText(folderLocation + "\\" + name + "Issues.csv", bugs.ToString());
+        }
+
+        private static Release ExtractCommits(GitHubClient client, string owner, string name, 
+            string currentTag, string previousTag, Release rel, string testPattern, List<Contributor> users)
         {
             var @base = previousTag;
             var head = currentTag;
@@ -79,142 +111,24 @@ namespace ExportReleaseData
             return rel;
         }
 
-        public static string GetPassword()
+        
+
+        private static List<Release> ExtractReleaseData(GitHubClient client, string owner, string name, 
+            string patternUrl, string testPattern, List<Issue> allBugs)
         {
-            var pwd = "";
-            do
-            {
-                ConsoleKeyInfo key = Console.ReadKey(true);
-                // Backspace Should Not Work
-                if (key.Key != ConsoleKey.Backspace && key.Key != ConsoleKey.Enter)
-                {
-                    pwd += key.KeyChar;
-                    Console.Write("*");
-                }
-                else
-                {
-                    if (key.Key == ConsoleKey.Backspace && pwd.Length > 0)
-                    {
-                        pwd = pwd.Substring(0, (pwd.Length - 1));
-                        Console.Write("\b \b");
-                    }
-                    else if (key.Key == ConsoleKey.Enter)
-                    {
-                        break;
-                    }
-                }
-            } while (true);
-            return pwd;
+            
+            List<Release> allReleases = GetAllReleasesUsingReleaseTags(client, owner, name, patternUrl, testPattern);
+
+            // Group releases by month and year into a dictionary
+            SortedList<string, List<Release>> dictReleases = GroupAllReleasesByMonth(allReleases);
+
+            // Add up the release information which are close to each other.
+            return CombineReleaseAndCorrespondingBugsInfo(allBugs, dictReleases);
         }
 
-        private static List<StringBuilder> ExtractPR(GitHubClient client, string owner, string name, string patternUrl, string testPattern)
+        private static List<Release> CombineReleaseAndCorrespondingBugsInfo(List<Issue> allBugs, SortedList<string, List<Release>> dictReleases)
         {
-            var prCsv = new StringBuilder();
-            var releaseCsv = new StringBuilder();
-            var issueCsv = new StringBuilder();
-            var allReleases = new List<Release>();
-            var allBugs = new List<Issue>();
-            ExtractIssues(client, owner, name, issueCsv, allBugs);
-            var allUsers = client.Repository.Statistics.GetContributors(owner, name).Result;
-            var tags = client.Repository.GetAllTags(owner, name).Result;
-            //   var releaseList = client.Repository.Release.GetAll(owner, name, new ApiOptions { PageSize = 500 }).Result;
-            releaseCsv.AppendLine("Id,ProjectName,Version,Release Order,Created,ProjectStars,ProjectWatch,Forks,TotalContributers,NumberofPullRequests,NumberOfFilesModified,NumberOfAdditions,NumberOfDeletions,NumberOfPRsReviewed,NumberOfUniqueContributers,NumberofReviewers,NumberofReviews,TestFilesChanged,PriorContributions,TotalFollowers,CommentsCount,IntegrationBugsCount,ContrubtionsFromMembers,Dependencies,TestCoverageScore,BugsCount");
-            prCsv.AppendLine("ReleaseId, Release Verson, Pull Id,UserId, NumberOfFilesModified, NumberOfAdditions, NumberOfDeletions, ContributionsPrior, Comments,  Reviewers,  TestCoverageScore,  NumberOfReviews,  TestFilesChanged");
-            issueCsv.AppendLine("IssueId,Title,CreatedDate");
-            var index = 0;
-            foreach (var tag in tags)
-            //   Parallel.ForEach(tags, (tag) =>
-            {
-                try
-                {
-                    Octokit.Release release = null;
-                    //if (releaseList.Count > 0)
-                    //{
-                    //    release = client.Repository.Release.Get(owner, name, releaseList.FirstOrDefault(r => r.TagName == tag.Name).Id).Result;
-                    //}
-                    //else
-                    //{
-
-                    release = client.Repository.Release.Get(owner, name, tag.Name).Result;
-                    // }
-                    var htmlUrl = release.HtmlUrl;
-                    Console.WriteLine(htmlUrl);
-                    string html = string.Empty;
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(htmlUrl);
-                    request.Timeout = Timeout.Infinite;
-                    request.KeepAlive = true;
-                    request.AutomaticDecompression = DecompressionMethods.GZip;
-                    var rel = new Release();
-                    rel.ProjectName = owner + "-" + name;
-                    rel.Forks = 0;
-                    rel.ProjectWatch = 0;
-                    rel.ProjectStars = 0;
-                    rel.Contributers = new List<int>();
-                    GetCommitInformation(release, rel, owner, name, client, tag.Commit.Sha);
-                    if (index > 0 && index < tags.Count - 2)
-                    {
-                        rel = ExtractCommits(client, owner, name, tags[index - 1].Name, tag.Name, rel, testPattern, allUsers.ToList());
-                    }
-                    rel.Id = release.Id;
-                    rel.PullRequests = new List<PullRequest>();
-                    try
-                    {
-                        using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                        using (Stream stream = response.GetResponseStream())
-                        using (StreamReader reader = new StreamReader(stream))
-                        {
-                            html = reader.ReadToEnd();
-                            // find commit url from the html
-                            string pattern = @"href=" + '\"' + patternUrl;
-                            string input = html;
-                            //      var nextReleaseDate = allReleases.Count == 0 ? DateTime.Now : allReleases[(int)index - 1].Created;
-                            rel.Created = ScrapCreatedDate(input);
-                            var m = Regex.Matches(input, pattern, RegexOptions.IgnoreCase);
-                            if (m.Count > 0)
-                            {
-                                Parallel.ForEach(m.OfType<Match>(), (match) =>
-                                {
-                                    var pullUrl = input.Substring(match.Index, input.IndexOf('"', match.Index + 6) - match.Index);
-                                    var pullId = Convert.ToInt32(!pullUrl.Split('/')[6].Contains('#') ? pullUrl.Split('/')[6] : pullUrl.Split('/')[6].Split('#')[0]);
-                                    Console.WriteLine(pullId);
-                                    rel.NumberofPullRequests += 1;
-                                    //var pullRequest = client.Repository.PullRequest.Get(owner, name, pullId);
-                                    //var pr = pullRequest.Result;
-                                });
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-
-                    }
-                    rel.Version = release.TagName;
-                    // Get the total contributions from all the authors
-
-                    allReleases.Add(rel);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine(ex.Message);
-                }
-                index++;
-            }
-
-            var dictReleases = new SortedList<string, List<Release>>();
             var releases = new List<Release>();
-            foreach (var rel in allReleases)
-            {
-                if (!dictReleases.Keys.Contains(rel.Created.ToString("MM-yyyy")))
-                {
-                    dictReleases.Add(rel.Created.ToString("MM-yyyy"), new List<Release> { rel });
-                }
-                else
-                {
-                    var tempReleases = dictReleases[rel.Created.ToString("MM-yyyy")];
-                    tempReleases.Add(rel);
-                    dictReleases[rel.Created.ToString("MM-yyyy")] = tempReleases.OrderBy(r => r.Created).ToList();
-                }
-            }
             var j = 0;
             var keys = dictReleases.Keys.OrderBy(k => Convert.ToInt32(k.Split('-')[1])).ToArray();
             foreach (var item in dictReleases.OrderBy(d => Convert.ToInt32(d.Key.Split('-')[1])))
@@ -236,10 +150,116 @@ namespace ExportReleaseData
                     release.BugsCount = allBugs.Count(b => b.Created < DateTime.Now && b.Created >= release.Created);
                 }
                 releases.Add(release);
-                releaseCsv.AppendLine(release.ToString());
                 j++;
             }
-            return new List<StringBuilder> { releaseCsv, prCsv, issueCsv };
+            return releases;
+        }
+
+        private static List<Release> GetAllReleasesUsingReleaseTags(GitHubClient client, string owner, string name, string patternUrl, string testPattern)
+        {
+            var index = 0;
+            var allReleases = new List<Release>();
+            var allUsers = client.Repository.Statistics.GetContributors(owner, name).Result;
+            var tags = client.Repository.GetAllTags(owner, name).Result;
+            // Go through all the release tags and extract commits and pull requests data
+            foreach (var tag in tags)
+            {
+                try
+                {
+                    Octokit.Release release = null;
+
+                    release = client.Repository.Release.Get(owner, name, tag.Name).Result;
+                    var rel = new Release();
+                    rel.ProjectName = owner + "-" + name;
+                    rel.Contributers = new List<int>();
+                    GetCommitInformation(release, rel, owner, name, client, tag.Commit.Sha);
+                    if (index > 0 && index < tags.Count - 2)
+                    {
+                        rel = ExtractCommits(client, owner, name, tags[index - 1].Name, tag.Name, rel,
+                            testPattern, allUsers.ToList());
+                    }
+                    rel.Id = release.Id;
+                    rel.PullRequests = new List<PullRequest>();
+                    ParseReleaseHtmlToCountPullRequests(patternUrl, release, rel);
+                    rel.Version = release.TagName;
+
+                    allReleases.Add(rel);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                }
+                index++;
+            }
+
+            return allReleases;
+        }
+
+        private static SortedList<string, List<Release>> GroupAllReleasesByMonth(List<Release> allReleases)
+        {
+            var dictReleases = new SortedList<string, List<Release>>();
+            foreach (var rel in allReleases)
+            {
+                if (!dictReleases.Keys.Contains(rel.Created.ToString("MM-yyyy")))
+                {
+                    dictReleases.Add(rel.Created.ToString("MM-yyyy"), new List<Release> { rel });
+                }
+                else
+                {
+                    var tempReleases = dictReleases[rel.Created.ToString("MM-yyyy")];
+                    tempReleases.Add(rel);
+                    dictReleases[rel.Created.ToString("MM-yyyy")] = tempReleases.OrderBy(r => r.Created).ToList();
+                }
+            }
+
+            return dictReleases;
+        }
+
+        /// <summary>
+        /// Counts the number of pull requests from the Release html body using html parsing
+        /// </summary>
+        /// <param name="patternUrl"></param>
+        /// <param name="release"></param>
+        /// <param name="rel"></param>
+        private static void ParseReleaseHtmlToCountPullRequests(string patternUrl, Octokit.Release release, 
+            Release rel)
+        {
+            try
+            {
+                var htmlUrl = release.HtmlUrl;
+                Console.WriteLine(htmlUrl);
+                string html = string.Empty;
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(htmlUrl);
+                request.Timeout = Timeout.Infinite;
+                request.KeepAlive = true;
+                request.AutomaticDecompression = DecompressionMethods.GZip;
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (Stream stream = response.GetResponseStream())
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    html = reader.ReadToEnd();
+                    // find commit url from the html
+                    string pattern = @"href=" + '\"' + patternUrl;
+                    string input = html;
+                    
+                    rel.Created = ScrapCreatedDate(input);
+                    var m = Regex.Matches(input, pattern, RegexOptions.IgnoreCase);
+                    if (m.Count > 0)
+                    {
+                        Parallel.ForEach(m.OfType<Match>(), (match) =>
+                        {
+                            var pullUrl = input.Substring(match.Index, input.IndexOf('"', match.Index + 6) - match.Index);
+                            var pullId = Convert.ToInt32(!pullUrl.Split('/')[6].Contains('#') ? pullUrl.Split('/')[6] : pullUrl.Split('/')[6].Split('#')[0]);
+                            Console.WriteLine(pullId);
+                            rel.NumberofPullRequests += 1;
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+
+            }
         }
 
         private static void AddCloseReleases(Release release, Release rel)
@@ -260,7 +280,8 @@ namespace ExportReleaseData
             release.TotalFollowers += rel.TotalFollowers;
         }
 
-        private static void GetCommitInformation(Octokit.Release release, Release rel, string owner, string name, GitHubClient client, string sha)
+        private static void GetCommitInformation(Octokit.Release release, Release rel, string owner,
+            string name, GitHubClient client, string sha)
         {
             var commit = client.Repository.Commit.Get(owner, name, sha).Result;
             rel.NumberOfAdditions += commit.Stats.Additions;
@@ -281,9 +302,9 @@ namespace ExportReleaseData
             return new DateTime(Convert.ToInt32(arrDate[0]), Convert.ToInt32(arrDate[1]), Convert.ToInt32(arrDate[2].Split('T')[0]));
         }
 
-        private static void ExtractIssues(GitHubClient client, string owner, string name, StringBuilder issueCsv, List<Issue> allBugs)
+        private static List<Issue> ExtractAllBugs(GitHubClient client, string owner, string name)
         {
-            Console.WriteLine("Extract All Issues...");
+            var allBugs = new List<Issue>();
             var all = new RepositoryIssueRequest
             {
                 Filter = IssueFilter.All,
@@ -295,11 +316,11 @@ namespace ExportReleaseData
             {
                 if (issue.Labels.Any(l => l.Name.ToLowerInvariant().Contains("bug")))
                 {
-                    allBugs.Add(new Issue { Id = issue.Id, Title = issue.Title, Created = issue.CreatedAt.UtcDateTime });
-                    issueCsv.AppendLine(new Issue { Id = issue.Id, Title = issue.Title, Created = issue.CreatedAt.UtcDateTime }.ToString());
+                    allBugs.Add(new Issue { Id = issue.Id, Title = issue.Title, Created = issue.CreatedAt.UtcDateTime });                   
                 }
             }
             Console.WriteLine("Total Bugs found: " + allBugs.Count);
+            return allBugs;
         }
     }
 }
