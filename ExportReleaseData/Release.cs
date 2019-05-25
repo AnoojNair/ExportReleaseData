@@ -76,6 +76,23 @@ namespace ExportReleaseData
                 $"{this.TestFilesChanged},{this.PriorContributions},{this.TotalFollowers},{this.CommentsCount},{this.IntegrationBugsCount},{this.ContrubtionsFromMembers},{this.Dependencies},{this.TestCoverageScore},{this.BugsCount}");
         }
 
-
+        public static Release operator +(Release release1 , Release release2)
+        {
+            release1.CommentsCount += release2.CommentsCount;
+            release1.ContrubtionsFromMembers += release2.ContrubtionsFromMembers;
+            release1.NumberOfAdditions += release2.NumberOfAdditions;
+            release1.NumberOfDeletions += release2.NumberOfDeletions;
+            release1.NumberOfFilesModified += release2.NumberOfFilesModified;
+            release1.NumberOfPRsReviewed += release2.NumberOfPRsReviewed;
+            release1.NumberofPullRequests += release2.NumberofPullRequests;
+            release1.NumberofReviewers += release2.NumberofReviewers;
+            release1.NumberofReviews += release2.NumberofReviews;
+            release1.TestFilesChanged += release2.TestFilesChanged;
+            release1.TestCoverageScore += release2.TestCoverageScore;
+            release1.NumberOfUniqueContributers += release2.NumberOfUniqueContributers;
+            release1.PriorContributions += release2.PriorContributions;
+            release1.TotalFollowers += release2.TotalFollowers;
+            return release1;
+        }
     }
 }

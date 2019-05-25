@@ -72,7 +72,7 @@ namespace ExportReleaseData
                 release.ReleaseOrder = j + 1;
                 foreach (var rel in item.Value)
                 {
-                    AddReleasesWhichAreinTheSameMonth(release, rel);
+                    release += rel;
                 }
                 if (j < dictReleases.Count - 1)
                 {
@@ -107,24 +107,6 @@ namespace ExportReleaseData
             }
 
             return dictReleases;
-        }
-
-        private static void AddReleasesWhichAreinTheSameMonth(Release release, Release rel)
-        {
-            release.CommentsCount += rel.CommentsCount;
-            release.ContrubtionsFromMembers += rel.ContrubtionsFromMembers;
-            release.NumberOfAdditions += rel.NumberOfAdditions;
-            release.NumberOfDeletions += rel.NumberOfDeletions;
-            release.NumberOfFilesModified += rel.NumberOfFilesModified;
-            release.NumberOfPRsReviewed += rel.NumberOfPRsReviewed;
-            release.NumberofPullRequests += rel.NumberofPullRequests;
-            release.NumberofReviewers += rel.NumberofReviewers;
-            release.NumberofReviews += rel.NumberofReviews;
-            release.TestFilesChanged += rel.TestFilesChanged;
-            release.TestCoverageScore += rel.TestCoverageScore;
-            release.NumberOfUniqueContributers += rel.NumberOfUniqueContributers;
-            release.PriorContributions += rel.PriorContributions;
-            release.TotalFollowers += rel.TotalFollowers;
         }      
     }
 }
